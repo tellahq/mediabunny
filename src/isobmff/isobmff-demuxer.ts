@@ -265,12 +265,6 @@ export class IsobmffDemuxer extends Demuxer {
 		this.reader = input._reader;
 	}
 
-	override async computeDuration() {
-		const tracks = await this.getTracks();
-		const trackDurations = await Promise.all(tracks.map(x => x.computeDuration()));
-		return Math.max(0, ...trackDurations);
-	}
-
 	override async getTracks() {
 		await this.readMetadata();
 		return this.tracks.map(track => track.inputTrack!);
@@ -2434,16 +2428,6 @@ abstract class IsobmffTrackBacking implements InputTrackBacking {
 
 	getVariant() {
 		return null;
-	}
-
-	async computeDuration() {
-		const lastPacket = await this.getPacket(Infinity, { metadataOnly: true });
-		return (lastPacket?.timestamp ?? 0) + (lastPacket?.duration ?? 0);
-	}
-
-	async getFirstTimestamp() {
-		const firstPacket = await this.getFirstPacket({ metadataOnly: true });
-		return firstPacket?.timestamp ?? 0;
 	}
 
 	async getFirstPacket(options: PacketRetrievalOptions) {
