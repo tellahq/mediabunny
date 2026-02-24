@@ -91,7 +91,17 @@ export class Mp4InputFormat extends IsobmffInputFormat {
 	/** @internal */
 	async _canReadInput(input: Input) {
 		const majorBrand = await this._getMajorBrand(input);
-		return !!majorBrand && majorBrand !== 'qt  ';
+		if (majorBrand) {
+			return majorBrand !== 'qt  ';
+		}
+
+		// fMP4 segments may omit the styp box and start directly with moof
+		let slice = input._reader.requestSlice(0, 8);
+		if (slice instanceof Promise) slice = await slice;
+		if (!slice) return false;
+
+		slice.skip(4);
+		return readAscii(slice, 4) === 'moof';
 	}
 
 	get name() {
