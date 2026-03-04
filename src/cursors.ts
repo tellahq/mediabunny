@@ -1129,7 +1129,7 @@ export abstract class SampleCursor<
 }
 
 export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCursor<VideoSample, TransformedSample> {
-	override track!: InputVideoTrack;
+	declare override track: InputVideoTrack;
 
 	constructor(
 		track: InputVideoTrack,
@@ -1176,7 +1176,7 @@ export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCu
 }
 
 export class AudioSampleCursor<TransformedSample = AudioSample> extends SampleCursor<AudioSample, TransformedSample> {
-	override track!: InputAudioTrack;
+	declare override track: InputAudioTrack;
 
 	constructor(
 		track: InputAudioTrack,
