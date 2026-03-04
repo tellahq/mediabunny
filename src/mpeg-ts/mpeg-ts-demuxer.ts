@@ -1634,7 +1634,7 @@ abstract class MpegTsTrackBacking implements InputTrackBacking {
 }
 
 class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTrackBacking {
-	declare override elementaryStream: ElementaryVideoStream;
+	override elementaryStream!: ElementaryVideoStream;
 
 	override getCodec(): VideoCodec {
 		return this.elementaryStream.info.codec;
@@ -1683,7 +1683,7 @@ class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTr
 }
 
 class MpegTsAudioTrackBacking extends MpegTsTrackBacking implements InputAudioTrackBacking {
-	declare override elementaryStream: ElementaryAudioStream;
+	override elementaryStream!: ElementaryAudioStream;
 
 	override getCodec(): AudioCodec {
 		return this.elementaryStream.info.codec;
