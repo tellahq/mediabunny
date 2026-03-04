@@ -251,6 +251,10 @@ export class VideoSample implements Disposable {
 	/** @internal */
 	_closed: boolean = false;
 
+	get closed() {
+		return this._closed;
+	}
+
 	/**
 	 * The internal pixel format in which the frame is stored. Will be `null` if it's using an arbitrary internal
 	 * format not representable by `VideoSamplePixelFormat`.
@@ -2299,6 +2303,10 @@ export class AudioSample implements Disposable {
 	_data: AudioData | Uint8Array | AudioSampleResource;
 	/** @internal */
 	_closed: boolean = false;
+
+	get closed() {
+		return this._closed;
+	}
 
 	/**
 	 * The audio sample format.

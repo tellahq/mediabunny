@@ -262,12 +262,27 @@ export {
 	BaseMediaSampleSink,
 	CanvasSink,
 	type CanvasSinkOptions,
+	DecoderWrapper,
 	EncodedPacketSink,
+	VideoDecoderWrapper,
+	AudioDecoderWrapper,
+	PcmAudioDecoderWrapper,
 	type PacketRetrievalOptions,
 	VideoSampleSink,
 	type WrappedAudioBuffer,
 	type WrappedCanvas,
 } from './media-sink';
+export {
+	PacketCursor,
+	SampleCursor,
+	VideoSampleCursor,
+	AudioSampleCursor,
+	WrappedCanvas as WrappedCanvasV2,
+	canvasTransformer,
+	type CanvasTransformerOptions,
+	type SampleTransformer,
+	type SampleCursorOptions,
+} from './cursors';
 export {
 	Conversion,
 	type ConversionOptions,

@@ -416,7 +416,7 @@ export class EncodedPacketSink {
 	}
 }
 
-abstract class DecoderWrapper<
+export abstract class DecoderWrapper<
 	MediaSample extends VideoSample | AudioSample,
 > {
 	constructor(
@@ -428,6 +428,7 @@ abstract class DecoderWrapper<
 	abstract decode(packet: EncodedPacket): void;
 	abstract flush(): Promise<void>;
 	abstract close(): void;
+	abstract get closed(): boolean;
 }
 
 /**
@@ -852,12 +853,13 @@ const computeMaxQueueSize = (decodedSampleQueueSize: number) => {
 	return decodedSampleQueueSize === 0 ? 40 : 8;
 };
 
-class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
+export class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 	decoder: VideoDecoder | null = null;
 
 	customDecoder: CustomVideoDecoder | null = null;
 	customDecoderCallSerializer = new CallSerializer();
 	customDecoderQueueSize = 0;
+	customDecoderClosed = false;
 
 	inputTimestamps: number[] = []; // Timestamps input into the decoder, sorted.
 	sampleQueue: VideoSample[] = []; // Safari-specific thing, check usage.
@@ -877,6 +879,7 @@ class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 	currentAlphaPacketIndex = 0;
 	alphaRaslSkipped = false; // For HEVC stuff
 	frameHandlerSerializer = new CallSerializer();
+	onDequeue: (() => unknown) | null = null;
 
 	constructor(
 		onSample: (sample: VideoSample) => unknown,
@@ -953,6 +956,9 @@ class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 				},
 			});
 			this.decoder.configure(this.decoderConfig);
+			this.decoder.addEventListener('dequeue', () => {
+				this.onDequeue?.();
+			});
 		}
 	}
 
@@ -982,7 +988,10 @@ class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 			this.customDecoderQueueSize++;
 			void this.customDecoderCallSerializer
 				.call(() => this.customDecoder!.decode(packet))
-				.then(() => this.customDecoderQueueSize--);
+				.then(() => {
+					this.customDecoderQueueSize--;
+					this.onDequeue?.();
+				});
 		} else {
 			assert(this.decoder);
 
@@ -1241,11 +1250,18 @@ class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 
 	close() {
 		if (this.customDecoder) {
-			void this.customDecoderCallSerializer.call(() => this.customDecoder!.close());
+			if (!this.customDecoderClosed) {
+				this.customDecoderClosed = true;
+				void this.customDecoderCallSerializer.call(() => this.customDecoder!.close());
+			}
 		} else {
 			assert(this.decoder);
-			this.decoder.close();
-			this.alphaDecoder?.close();
+			if (this.decoder.state !== 'closed') {
+				this.decoder.close();
+			}
+			if (this.alphaDecoder && this.alphaDecoder.state !== 'closed') {
+				this.alphaDecoder.close();
+			}
 
 			this.colorQueue.forEach(x => x.close());
 			this.colorQueue.length = 0;
@@ -1259,6 +1275,15 @@ class VideoDecoderWrapper extends DecoderWrapper<VideoSample> {
 			sample.close();
 		}
 		this.sampleQueue.length = 0;
+	}
+
+	get closed() {
+		if (this.customDecoder) {
+			return this.customDecoderClosed;
+		}
+
+		assert(this.decoder);
+		return this.decoder.state === 'closed';
 	}
 }
 
@@ -2138,12 +2163,14 @@ export class CanvasSink {
 	}
 }
 
-class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
+export class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 	decoder: AudioDecoder | null = null;
 
 	customDecoder: CustomAudioDecoder | null = null;
 	customDecoderCallSerializer = new CallSerializer();
 	customDecoderQueueSize = 0;
+	customDecoderClosed = false;
+	onDequeue: (() => unknown) | null = null;
 
 	// Internal state to accumulate a precise current timestamp based on audio durations, not the (potentially
 	// inaccurate) packet timestamps.
@@ -2229,6 +2256,9 @@ class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 				},
 			});
 			this.decoder.configure(decoderConfig);
+			this.decoder.addEventListener('dequeue', () => {
+				this.onDequeue?.();
+			});
 		}
 	}
 
@@ -2246,7 +2276,10 @@ class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 			this.customDecoderQueueSize++;
 			void this.customDecoderCallSerializer
 				.call(() => this.customDecoder!.decode(packet))
-				.then(() => this.customDecoderQueueSize--);
+				.then(() => {
+					this.customDecoderQueueSize--;
+					this.onDequeue?.();
+				});
 		} else {
 			assert(this.decoder);
 
@@ -2270,18 +2303,33 @@ class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 
 	close() {
 		if (this.customDecoder) {
-			void this.customDecoderCallSerializer.call(() => this.customDecoder!.close());
+			if (!this.customDecoderClosed) {
+				this.customDecoderClosed = true;
+				void this.customDecoderCallSerializer.call(() => this.customDecoder!.close());
+			}
 		} else {
 			assert(this.decoder);
-			this.decoder.close();
+			if (this.decoder.state !== 'closed') {
+				this.decoder.close();
+			}
 		}
+	}
+
+	get closed() {
+		if (this.customDecoder) {
+			return this.customDecoderClosed;
+		}
+
+		assert(this.decoder);
+		return this.decoder.state === 'closed';
 	}
 }
 
 // There are a lot of PCM variants not natively supported by the browser and by AudioData. Therefore we need a simple
 // decoder that maps any input PCM format into a PCM format supported by the browser.
-class PcmAudioDecoderWrapper extends DecoderWrapper<AudioSample> {
+export class PcmAudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 	codec: PcmAudioCodec;
+	isClosed = false;
 
 	inputSampleSize: 1 | 2 | 3 | 4 | 8;
 	readInputValue: (view: DataView, byteOffset: number) => number;
@@ -2459,7 +2507,11 @@ class PcmAudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 	}
 
 	close() {
-		// Do nothing
+		this.isClosed = true;
+	}
+
+	get closed() {
+		return this.isClosed;
 	}
 }
 
