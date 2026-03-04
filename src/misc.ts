@@ -169,6 +169,13 @@ export const isAllowSharedBufferSource = (x: unknown) => {
 	);
 };
 
+// Polyfill must run before any class using [Symbol.dispose] is defined,
+// otherwise the computed property key evaluates to undefined.
+// @ts-expect-error Readonly
+Symbol.dispose ??= Symbol('Symbol.dispose');
+// @ts-expect-error Readonly
+Symbol.asyncDispose ??= Symbol('Symbol.asyncDispose');
+
 export class AsyncMutex {
 	locked = false;
 	private resolverQueue: (() => void)[] = [];
