@@ -203,7 +203,6 @@ export {
 	CanvasSink,
 	CanvasSinkOptions,
 	EncodedPacketSink,
-	PacketRetrievalOptions,
 	VideoSampleSink,
 	WrappedAudioBuffer,
 	WrappedCanvas,
