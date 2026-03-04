@@ -247,32 +247,57 @@ export const isAllowSharedBufferSource = (x: unknown) => {
 };
 
 export class AsyncMutex {
-	currentPromise = Promise.resolve();
-	pending = 0;
+	locked = false;
+	private resolverQueue: (() => void)[] = [];
 
-	async acquire() {
-		let resolver: () => void;
-		const nextPromise = new Promise<void>((resolve) => {
-			let resolved = false;
+	lock() {
+		if (!this.locked) {
+			this.locked = true;
+			return new AsyncMutexLock(this, false, null);
+		}
 
-			resolver = () => {
-				if (resolved) {
-					return;
-				}
+		const { promise, resolve } = promiseWithResolvers();
+		this.resolverQueue.push(resolve);
 
-				resolve();
-				this.pending--;
-				resolved = true;
-			};
-		});
+		return new AsyncMutexLock(this, true, promise);
+	}
 
-		const currentPromiseAlias = this.currentPromise;
-		this.currentPromise = nextPromise;
-		this.pending++;
+	dispatch() {
+		if (this.resolverQueue.length > 0) {
+			const resolve = this.resolverQueue.shift()!;
+			resolve();
+		} else {
+			this.locked = false;
+		}
+	}
 
-		await currentPromiseAlias;
+	async waitForUnlock() {
+		const lock = this.lock();
+		await lock.ready;
+		lock.release();
+	}
+}
 
-		return resolver!;
+export class AsyncMutexLock implements Disposable {
+	private released = false;
+
+	constructor(
+		private readonly mutex: AsyncMutex,
+		public readonly pending: boolean,
+		public readonly ready: Promise<void> | null,
+	) {}
+
+	release() {
+		if (this.released) {
+			return;
+		}
+
+		this.released = true;
+		this.mutex.dispatch();
+	}
+
+	[Symbol.dispose]() {
+		this.release();
 	}
 }
 
@@ -688,6 +713,129 @@ export class CallSerializer {
 	}
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const returnSymbol: unique symbol = Symbol();
+export type ReturnSymbol = typeof returnSymbol;
+export type MaybeRelevantPromise = Promise<ReturnSymbol>;
+
+export class ResultValue<T> {
+	value!: T;
+	pending = true;
+
+	// @ts-expect-error Return value just for the types
+	set(value: T): ReturnSymbol {
+		this.value = value;
+		this.pending = false;
+	}
+
+	reset() {
+		this.pending = true;
+	}
+}
+
+export class NaiveCallSerializer {
+	currentPromise = Promise.resolve();
+	errored = false;
+
+	call(fn: () => Promise<void> | void) {
+		return this.currentPromise = this.currentPromise
+			.then(fn)
+			.catch((error) => {
+				this.errored = true;
+				throw error;
+			});
+	}
+}
+
+export class ForgivingCallSerializer {
+	private currentPromise: Promise<unknown> | null = null;
+	private queuedCalls = 0;
+
+	call<T>(fn: () => T) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		type ReturnType = T extends Promise<any> ? T : T | Promise<T>;
+
+		if (this.currentPromise) {
+			this.queuedCalls++;
+
+			return (this.currentPromise = this.currentPromise
+				.catch(() => {})
+				.then(() => {
+					this.queuedCalls--;
+					return fn();
+				})
+				.finally(() => {
+					if (this.queuedCalls === 0) {
+						this.currentPromise = null;
+					}
+				})) as unknown as ReturnType;
+		} else {
+			const result = fn();
+
+			if (result instanceof Promise) {
+				this.currentPromise = result
+					.finally(() => {
+						if (this.queuedCalls === 0) {
+							this.currentPromise = null;
+						}
+					});
+			}
+
+			return result as unknown as ReturnType;
+		}
+	}
+
+	waitUntilIdle() {
+		if (this.currentPromise) {
+			return this.currentPromise
+				.catch(() => {})
+				.then(() => {});
+		} else {
+			return null;
+		}
+	}
+
+	isIdle() {
+		return !this.currentPromise;
+	}
+}
+
+export class AsyncGate {
+	resolvers: (() => void)[] = [];
+
+	wait() {
+		const { promise, resolve } = promiseWithResolvers();
+
+		this.resolvers.push(resolve);
+		return promise;
+	}
+
+	open() {
+		if (this.resolvers.length > 0) {
+			this.resolvers.forEach(fn => fn());
+			this.resolvers.length = 0;
+		}
+	}
+}
+
+export const defer = (callback: () => void) => {
+	let executed = false;
+
+	return {
+		execute() {
+			if (executed) {
+				return;
+			}
+
+			executed = true;
+			callback();
+		},
+		[Symbol.dispose]() {
+			this.execute();
+		},
+	};
+}
+
 let isWebKitCache: boolean | null = null;
 export const isWebKit = () => {
 	if (isWebKitCache !== null) {
@@ -845,6 +993,8 @@ export const polyfillSymbolDispose = () => {
 	// https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-2.html
 	// @ts-expect-error Readonly
 	Symbol.dispose ??= Symbol('Symbol.dispose');
+	// @ts-expect-error Readonly
+	Symbol.asyncDispose ??= Symbol('Symbol.asyncDispose');
 };
 
 export const isNumber = (x: unknown) => {

@@ -182,6 +182,8 @@ export {
 	EncodedPacket,
 	EncodedPacketSideData,
 	PacketType,
+	PacketReader,
+	PacketRetrievalOptions,
 } from './packet';
 export {
 	AudioSample,
@@ -229,5 +231,22 @@ export {
 	AttachedFile,
 	TrackDisposition,
 } from './metadata';
+
+export {
+	PacketCursor,
+	SampleCursor,
+	VideoSampleCursor,
+	AudioSampleCursor,
+	WrappedCanvas as WrappedCanvasV2,
+	canvasTransformer,
+	CanvasTransformerOptions,
+	SampleTransformer,
+	SampleCursorOptions,
+} from './cursors';
+export {
+	VideoDecoderWrapper,
+	AudioDecoderWrapper,
+	PcmAudioDecoderWrapper,
+} from './decode';
 
 // 🐡🦔

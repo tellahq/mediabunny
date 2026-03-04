@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { SECOND_TO_MICROSECOND_FACTOR } from './misc';
+import { InputDisposedError } from './input';
+import { InputTrack } from './input-track';
+import { isNumber, MaybePromise, SECOND_TO_MICROSECOND_FACTOR } from './misc';
 
 export const PLACEHOLDER_DATA = /* #__PURE__ */ new Uint8Array(0);
 
@@ -283,5 +285,168 @@ export class EncodedPacket {
 			this.byteLength,
 			options?.sideData ?? this.sideData,
 		);
+	}
+}
+
+export type PacketRetrievalOptions = {
+	metadataOnly?: boolean;
+	verifyKeyPackets?: boolean;
+};
+
+export const validatePacketRetrievalOptions = (options: PacketRetrievalOptions) => {
+	if (!options || typeof options !== 'object') {
+		throw new TypeError('options must be an object.');
+	}
+	if (options.metadataOnly !== undefined && typeof options.metadataOnly !== 'boolean') {
+		throw new TypeError('options.metadataOnly, when defined, must be a boolean.');
+	}
+	if (options.verifyKeyPackets !== undefined && typeof options.verifyKeyPackets !== 'boolean') {
+		throw new TypeError('options.verifyKeyPackets, when defined, must be a boolean.');
+	}
+	if (options.verifyKeyPackets && options.metadataOnly) {
+		throw new TypeError('options.verifyKeyPackets and options.metadataOnly cannot be enabled together.');
+	}
+};
+
+export const validateTimestamp = (timestamp: number) => {
+	if (!isNumber(timestamp)) {
+		throw new TypeError('timestamp must be a number.');
+	}
+};
+
+/**
+ * Reads packets from an InputTrack. Adapted for the HLS branch's promise-based InputTrackBacking interface.
+ */
+export class PacketReader<T extends InputTrack = InputTrack> {
+	track: T;
+
+	constructor(track: T) {
+		if (!(track instanceof InputTrack)) {
+			throw new TypeError('track must be an InputTrack.');
+		}
+		this.track = track;
+	}
+
+	private _maybeVerifyPacketType(
+		packet: EncodedPacket | null,
+		options: PacketRetrievalOptions,
+	): MaybePromise<EncodedPacket | null> {
+		if (!options.verifyKeyPackets || !packet || packet.type === 'delta') {
+			return packet;
+		}
+
+		return this.track.determinePacketType(packet).then((determinedType) => {
+			if (determinedType) {
+				// @ts-expect-error Technically readonly
+				packet.type = determinedType;
+			}
+
+			return packet;
+		});
+	}
+
+	getFirst(options: PacketRetrievalOptions = {}): Promise<EncodedPacket | null> {
+		validatePacketRetrievalOptions(options);
+
+		if (this.track.input._disposed) {
+			throw new InputDisposedError();
+		}
+
+		return this.track._backing.getFirstPacket(options)
+			.then(p => this._maybeVerifyPacketType(p, options)) as Promise<EncodedPacket | null>;
+	}
+
+	getAt(timestamp: number, options: PacketRetrievalOptions = {}): Promise<EncodedPacket | null> {
+		validateTimestamp(timestamp);
+		validatePacketRetrievalOptions(options);
+
+		if (this.track.input._disposed) {
+			throw new InputDisposedError();
+		}
+
+		return this.track._backing.getPacket(timestamp, options)
+			.then(p => this._maybeVerifyPacketType(p, options)) as Promise<EncodedPacket | null>;
+	}
+
+	getKeyAt(timestamp: number, options: PacketRetrievalOptions = {}): Promise<EncodedPacket | null> {
+		validateTimestamp(timestamp);
+		validatePacketRetrievalOptions(options);
+
+		if (this.track.input._disposed) {
+			throw new InputDisposedError();
+		}
+
+		if (options.verifyKeyPackets) {
+			return this._readKeyAtVerified(timestamp, options);
+		}
+
+		return this.track._backing.getKeyPacket(timestamp, options);
+	}
+
+	private async _readKeyAtVerified(
+		timestamp: number,
+		options: PacketRetrievalOptions,
+	): Promise<EncodedPacket | null> {
+		const packet = await this.track._backing.getKeyPacket(timestamp, options);
+
+		if (!packet) {
+			return null;
+		}
+
+		const determinedType = await this.track.determinePacketType(packet);
+		if (determinedType === 'delta') {
+			return this._readKeyAtVerified(packet.timestamp - 1 / this.track.timeResolution, options);
+		}
+
+		return packet;
+	}
+
+	getNext(from: EncodedPacket, options: PacketRetrievalOptions = {}): Promise<EncodedPacket | null> {
+		if (!(from instanceof EncodedPacket)) {
+			throw new TypeError('from must be an EncodedPacket.');
+		}
+		validatePacketRetrievalOptions(options);
+
+		if (this.track.input._disposed) {
+			throw new InputDisposedError();
+		}
+
+		return this.track._backing.getNextPacket(from, options)
+			.then(p => this._maybeVerifyPacketType(p, options)) as Promise<EncodedPacket | null>;
+	}
+
+	getNextKey(from: EncodedPacket, options: PacketRetrievalOptions = {}): Promise<EncodedPacket | null> {
+		if (!(from instanceof EncodedPacket)) {
+			throw new TypeError('from must be an EncodedPacket.');
+		}
+		validatePacketRetrievalOptions(options);
+
+		if (this.track.input._disposed) {
+			throw new InputDisposedError();
+		}
+
+		if (options.verifyKeyPackets) {
+			return this._getNextKeyVerified(from, options);
+		}
+
+		return this.track._backing.getNextKeyPacket(from, options);
+	}
+
+	private async _getNextKeyVerified(
+		from: EncodedPacket,
+		options: PacketRetrievalOptions,
+	): Promise<EncodedPacket | null> {
+		const nextPacket = await this.track._backing.getNextKeyPacket(from, options);
+
+		if (!nextPacket) {
+			return null;
+		}
+
+		const determinedType = await this.track.determinePacketType(nextPacket);
+		if (determinedType === 'delta') {
+			return this._getNextKeyVerified(nextPacket, options);
+		}
+
+		return nextPacket;
 	}
 }

@@ -42,45 +42,17 @@ import {
 	toUint8Array,
 	validateAnyIterable,
 } from './misc';
-import { EncodedPacket } from './packet';
+import {
+	EncodedPacket,
+	PacketRetrievalOptions as PacketRetrievalOptionsFromPacket,
+	validatePacketRetrievalOptions as validatePacketRetrievalOptionsFromPacket,
+} from './packet';
 import { fromAlaw, fromUlaw } from './pcm';
 import { AudioSample, clampCropRectangle, CropRectangle, validateCropRectangle, VideoSample } from './sample';
 
-/**
- * Additional options for controlling packet retrieval.
- * @group Media sinks
- * @public
- */
-export type PacketRetrievalOptions = {
-	/**
-	 * When set to `true`, only packet metadata (like timestamp) will be retrieved - the actual packet data will not
-	 * be loaded.
-	 */
-	metadataOnly?: boolean;
-
-	/**
-	 * When set to true, key packets will be verified upon retrieval by looking into the packet's bitstream.
-	 * If not enabled, the packet types will be determined solely by what's stored in the containing file and may be
-	 * incorrect, potentially leading to decoder errors. Since determining a packet's actual type requires looking into
-	 * its data, this option cannot be enabled together with `metadataOnly`.
-	 */
-	verifyKeyPackets?: boolean;
-};
-
-const validatePacketRetrievalOptions = (options: PacketRetrievalOptions) => {
-	if (!options || typeof options !== 'object') {
-		throw new TypeError('options must be an object.');
-	}
-	if (options.metadataOnly !== undefined && typeof options.metadataOnly !== 'boolean') {
-		throw new TypeError('options.metadataOnly, when defined, must be a boolean.');
-	}
-	if (options.verifyKeyPackets !== undefined && typeof options.verifyKeyPackets !== 'boolean') {
-		throw new TypeError('options.verifyKeyPackets, when defined, must be a boolean.');
-	}
-	if (options.verifyKeyPackets && options.metadataOnly) {
-		throw new TypeError('options.verifyKeyPackets and options.metadataOnly cannot be enabled together.');
-	}
-};
+// Re-export from packet.ts for backward compatibility
+export type PacketRetrievalOptions = PacketRetrievalOptionsFromPacket;
+const validatePacketRetrievalOptions = validatePacketRetrievalOptionsFromPacket;
 
 const validateTimestamp = (timestamp: number) => {
 	if (!isNumber(timestamp)) {
