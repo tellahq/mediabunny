@@ -35,6 +35,7 @@ import { MpegTsDemuxer } from './mpeg-ts/mpeg-ts-demuxer';
 import { TS_PACKET_SIZE } from './mpeg-ts/mpeg-ts-misc';
 import { HlsDemuxer } from './hls/hls-demuxer';
 import { HLS_MIME_TYPE } from './hls/hls-misc';
+import { DashDemuxer } from './dash/dash-demuxer';
 import { PathedSource } from './source';
 import { MaybePromise } from './misc';
 
@@ -630,6 +631,51 @@ export class HlsInputFormat extends InputFormat {
 }
 
 /**
+ * Media described using the Dynamic Adaptive Streaming over HTTP (DASH) protocol, with manifests in the MPD format.
+ *
+ * Do not instantiate this class; use the {@link DASH} singleton instead.
+ *
+ * @group Input formats
+ * @public
+ */
+export class DashInputFormat extends InputFormat {
+	/** @internal */
+	async _canReadInput(input: Input) {
+		let slice = input._reader.requestSlice(0, 256);
+		if (slice instanceof Promise) {
+			slice = await slice;
+		}
+		if (!slice) {
+			return false;
+		}
+
+		const text = readAscii(slice, Math.min(256, slice.length));
+		if (!text.includes('<MPD')) {
+			return false;
+		}
+
+		if (!(input._rootSource instanceof PathedSource)) {
+			throw new TypeError('DASH inputs require `InputOptions.source` to be a PathedSource or a ref to one.');
+		}
+
+		return true;
+	}
+
+	/** @internal */
+	_createDemuxer(input: Input) {
+		return new DashDemuxer(input);
+	}
+
+	get name() {
+		return 'Dynamic Adaptive Streaming over HTTP (DASH)';
+	}
+
+	get mimeType() {
+		return 'application/dash+xml';
+	}
+}
+
+/**
  * MP4 input format singleton.
  * @group Input formats
  * @public
@@ -698,6 +744,12 @@ export const MPEG_TS = /* #__PURE__ */ new MpegTsInputFormat();
  * @public
  */
 export const HLS = /* #__PURE__ */ new HlsInputFormat();
+/**
+ * DASH input format singleton.
+ * @group Input formats
+ * @public
+ */
+export const DASH = /* #__PURE__ */ new DashInputFormat();
 
 /**
  * List of all input format singletons. If you don't need to support all input formats, you should specify the
@@ -705,7 +757,7 @@ export const HLS = /* #__PURE__ */ new HlsInputFormat();
  * @group Input formats
  * @public
  */
-export const ALL_FORMATS: InputFormat[] = [HLS, MP4, QTFF, MATROSKA, WEBM, WAVE, OGG, FLAC, MP3, ADTS, MPEG_TS];
+export const ALL_FORMATS: InputFormat[] = [DASH, HLS, MP4, QTFF, MATROSKA, WEBM, WAVE, OGG, FLAC, MP3, ADTS, MPEG_TS];
 
 /**
  * List of input formats required for playback of typical HLS manifests. Includes HLS itself as well as the typical
