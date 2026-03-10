@@ -807,8 +807,6 @@ abstract class HlsInputTrackBacking implements InputTrackBacking {
 class HlsInputVideoTrackBacking
 	extends HlsInputTrackBacking
 	implements InputVideoTrackBacking {
-	override internalTrack!: InternalVideoTrack;
-
 	constructor(internalTrack: InternalVideoTrack) {
 		super(internalTrack);
 	}
@@ -888,8 +886,6 @@ class HlsInputVideoTrackBacking
 class HlsInputAudioTrackBacking
 	extends HlsInputTrackBacking
 	implements InputAudioTrackBacking {
-	override internalTrack!: InternalAudioTrack;
-
 	constructor(internalTrack: InternalAudioTrack) {
 		super(internalTrack);
 	}
