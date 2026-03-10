@@ -194,6 +194,16 @@ export class Input<S extends Source = Source> implements Disposable {
 				}
 			}
 
+			// For segmented streams (DASH/HLS), media segments may not be self-identifying
+			// (e.g. WebM Clusters without EBML header). Fall back to the init segment's format.
+			if (this._initInput) {
+				await this._initInput._getDemuxer();
+				if (this._initInput._format) {
+					this._format = this._initInput._format;
+					return this._format._createDemuxer(this);
+				}
+			}
+
 			throw new Error(UNSUPPORTED_INPUT_FORMAT_MESSAGE);
 		})();
 	}

@@ -33,6 +33,7 @@ import { FlacDemuxer } from './flac/flac-demuxer';
 import { MpegTsDemuxer } from './mpeg-ts/mpeg-ts-demuxer';
 import { TS_PACKET_SIZE } from './mpeg-ts/mpeg-ts-misc';
 import { HlsDemuxer } from './hls/hls-demuxer';
+import { DashDemuxer } from './dash/dash-demuxer';
 
 /**
  * Base class representing an input media file format.
@@ -595,6 +596,41 @@ export class HlsInputFormat extends InputFormat {
 	}
 }
 
+export class DashInputFormat extends InputFormat {
+	async _canReadInput(input: Input) {
+		let slice = input._reader.requestSlice(0, 256);
+		if (slice instanceof Promise) {
+			slice = await slice;
+		}
+		if (!slice) {
+			return false;
+		}
+
+		const text = readAscii(slice, Math.min(256, slice.length));
+		if (!text.includes('<MPD')) {
+			return false;
+		}
+
+		if (typeof input._source !== 'function') {
+			throw new TypeError('DASH inputs require `InputOptions.source` to be a function.');
+		}
+
+		return true;
+	}
+
+	_createDemuxer(input: Input) {
+		return new DashDemuxer(input);
+	}
+
+	get name() {
+		return 'Dynamic Adaptive Streaming over HTTP (DASH)';
+	}
+
+	get mimeType() {
+		return 'application/dash+xml';
+	}
+}
+
 export class VirtualInputFormat extends InputFormat {
 	/** @internal */
 	_createDemuxerFn: (input: Input) => Demuxer;
@@ -695,6 +731,12 @@ export const MPEG_TS = /* #__PURE__ */ new MpegTsInputFormat();
  * @public
  */
 export const HLS = /* #__PURE__ */ new HlsInputFormat();
+/**
+ * DASH input format singleton.
+ * @group Input formats
+ * @public
+ */
+export const DASH = /* #__PURE__ */ new DashInputFormat();
 
 /**
  * List of all input format singletons. If you don't need to support all input formats, you should specify the
@@ -702,4 +744,4 @@ export const HLS = /* #__PURE__ */ new HlsInputFormat();
  * @group Input formats
  * @public
  */
-export const ALL_FORMATS: InputFormat[] = [HLS, MP4, QTFF, MATROSKA, WEBM, WAVE, OGG, FLAC, MP3, ADTS, MPEG_TS];
+export const ALL_FORMATS: InputFormat[] = [DASH, HLS, MP4, QTFF, MATROSKA, WEBM, WAVE, OGG, FLAC, MP3, ADTS, MPEG_TS];

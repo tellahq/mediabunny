@@ -144,6 +144,7 @@ export {
 export {
 	InputFormat,
 	AdtsInputFormat,
+	DashInputFormat,
 	FlacInputFormat,
 	IsobmffInputFormat,
 	MatroskaInputFormat,
@@ -155,6 +156,7 @@ export {
 	WaveInputFormat,
 	WebMInputFormat,
 	ALL_FORMATS,
+	DASH,
 	ADTS,
 	FLAC,
 	MATROSKA,
