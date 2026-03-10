@@ -11,9 +11,12 @@
   "module": "./dist/modules/src/index.js",
   "types": "./dist/modules/src/index.d.ts",
   "exports": {
-    "types": "./dist/modules/src/index.d.ts",
-    "import": "./dist/modules/src/index.js",
-    "require": "./dist/bundles/mediabunny.cjs"
+    ".": {
+      "types": "./dist/modules/src/index.d.ts",
+      "import": "./dist/modules/src/index.js",
+      "require": "./dist/bundles/mediabunny.cjs"
+    },
+    "./src/*": "./src/*"
   },
   "files": [
     "README.md",

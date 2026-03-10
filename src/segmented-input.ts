@@ -407,8 +407,6 @@ class SegmentedInputInputTrackBacking implements InputTrackBacking {
 class SegmentedInputInputVideoTrackBacking
 	extends SegmentedInputInputTrackBacking
 	implements InputVideoTrackBacking {
-	override firstInputTrack!: InputVideoTrack;
-
 	override getCodec(): VideoCodec | null {
 		return this.firstInputTrack._backing.getCodec();
 	}
@@ -449,8 +447,6 @@ class SegmentedInputInputVideoTrackBacking
 class SegmentedInputInputAudioTrackBacking
 	extends SegmentedInputInputTrackBacking
 	implements InputAudioTrackBacking {
-	override firstInputTrack!: InputAudioTrack;
-
 	override getCodec(): AudioCodec | null {
 		return this.firstInputTrack._backing.getCodec();
 	}
