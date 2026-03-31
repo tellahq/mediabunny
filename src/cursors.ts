@@ -319,6 +319,20 @@ export abstract class SampleCursor<
 		return this._errorSet;
 	}
 
+	get bufferState(): {
+		queueLength: number;
+		decodeQueueSize: number;
+		pumpRunning: boolean;
+		pendingRequests: number;
+	} {
+		return {
+			queueLength: this._sampleQueue.length,
+			decodeQueueSize: this._decoder?.getDecodeQueueSize() ?? 0,
+			pumpRunning: this._pumpRunning,
+			pendingRequests: this._pendingRequests.length,
+		};
+	}
+
 	protected constructor(
 		track: InputTrack,
 		options: SampleCursorOptions<Sample, TransformedSample>,
