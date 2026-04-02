@@ -201,6 +201,12 @@ export class AsyncMutex {
 		}
 	}
 
+	async acquire() {
+		const lock = this.lock();
+		await lock.ready;
+		return () => lock.release();
+	}
+
 	async waitForUnlock() {
 		const lock = this.lock();
 		await lock.ready;
