@@ -1167,16 +1167,19 @@ export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCu
 		}
 
 		const decoderConfig = await track.getDecoderConfig();
+		const codec = await track.getCodec();
+		const rotation = await track.getRotation();
+		const timeResolution = await track.getTimeResolution();
 		assert(decoderConfig);
-		assert(track.codec);
+		assert(codec);
 
 		const decoder = new VideoDecoderWrapper(
 			sample => this._onDecoderSample(sample),
 			error => this._onDecoderError(error),
-			track.codec,
+			codec,
 			decoderConfig,
-			track.rotation,
-			track.timeResolution,
+			rotation,
+			timeResolution,
 		);
 
 		decoder.onDequeue = () => this._onDecoderDequeue();
@@ -1213,7 +1216,7 @@ export class AudioSampleCursor<TransformedSample = AudioSample> extends SampleCu
 			throw new Error('Fake decoder init error!');
 		}
 
-		const codec = track.codec;
+		const codec = await track.getCodec();
 		const decoderConfig = await track.getDecoderConfig();
 		assert(codec && decoderConfig);
 

@@ -291,6 +291,7 @@ export class EncodedPacket {
 export type PacketRetrievalOptions = {
 	metadataOnly?: boolean;
 	verifyKeyPackets?: boolean;
+	skipLiveWait?: boolean;
 };
 
 export const validatePacketRetrievalOptions = (options: PacketRetrievalOptions) => {
@@ -305,6 +306,9 @@ export const validatePacketRetrievalOptions = (options: PacketRetrievalOptions) 
 	}
 	if (options.verifyKeyPackets && options.metadataOnly) {
 		throw new TypeError('options.verifyKeyPackets and options.metadataOnly cannot be enabled together.');
+	}
+	if (options.skipLiveWait !== undefined && typeof options.skipLiveWait !== 'boolean') {
+		throw new TypeError('options.skipLiveWait, when defined, must be a boolean.');
 	}
 };
 
@@ -395,7 +399,7 @@ export class PacketReader<T extends InputTrack = InputTrack> {
 
 		const determinedType = await this.track.determinePacketType(packet);
 		if (determinedType === 'delta') {
-			return this._readKeyAtVerified(packet.timestamp - 1 / this.track.timeResolution, options);
+			return this._readKeyAtVerified(packet.timestamp - 1 / await this.track.getTimeResolution(), options);
 		}
 
 		return packet;

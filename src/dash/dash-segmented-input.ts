@@ -28,6 +28,7 @@ export type DashRepresentationInfo = {
 	startNumber: number;
 	timeline: SegmentTimelineEntry[];
 	baseUrl: string | null;
+	duration: number | null;
 };
 
 type DashSegmentLocation = {
@@ -80,12 +81,30 @@ export class DashSegmentedInput extends SegmentedInput {
 		let segmentNumber = info.startNumber;
 		let firstSegment: DashSegment | null = null;
 
-		for (const entry of info.timeline) {
+		for (let i = 0; i < info.timeline.length; i++) {
+			const entry = info.timeline[i]!;
 			if (entry.t !== undefined) {
 				currentTime = entry.t;
 			}
 
-			const repeatCount = (entry.r ?? 0) + 1;
+			let repeatCount: number;
+			if (entry.r === undefined) {
+				repeatCount = 1;
+			} else {
+				if (entry.r >= 0) {
+					repeatCount = entry.r + 1;
+				} else {
+					const nextEntry = info.timeline[i + 1];
+					if (nextEntry?.t !== undefined) {
+						repeatCount = Math.ceil((nextEntry.t - currentTime) / entry.d);
+					} else if (info.duration !== null) {
+						repeatCount = Math.ceil((info.duration * info.timescale - currentTime) / entry.d);
+					} else {
+						repeatCount = 1;
+					}
+					repeatCount = Math.max(0, repeatCount);
+				}
+			}
 
 			for (let r = 0; r < repeatCount; r++) {
 				const durationSec = entry.d / info.timescale;

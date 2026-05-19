@@ -1,7 +1,7 @@
 import { Demuxer } from '../demuxer';
 import { Input } from '../input';
 import { InputTrackBacking } from '../input-track';
-import { assert } from '../misc';
+import { assert, joinPaths } from '../misc';
 import { MetadataTags } from '../metadata';
 import { PathedSource } from '../source';
 import { DashRepresentationInfo, DashSegmentedInput } from './dash-segmented-input';
@@ -175,9 +175,36 @@ type ParsedRepresentation = {
 	info: DashRepresentationInfo;
 };
 
+const parseIsoDuration = (value: string | null): number | null => {
+	if (!value) {
+		return null;
+	}
+
+	const match = /^P(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)W)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value);
+	if (!match) {
+		return null;
+	}
+	if (match[1] !== undefined || match[2] !== undefined) {
+		return null;
+	}
+
+	const weeks = Number(match[3] ?? 0);
+	const days = Number(match[4] ?? 0);
+	const hours = Number(match[5] ?? 0);
+	const minutes = Number(match[6] ?? 0);
+	const seconds = Number(match[7] ?? 0);
+
+	return weeks * 7 * 24 * 60 * 60
+		+ days * 24 * 60 * 60
+		+ hours * 60 * 60
+		+ minutes * 60
+		+ seconds;
+};
+
 const parseSegmentTemplate = (
 	adaptationSet: XmlNode,
 	representation: XmlNode,
+	duration: number | null,
 ): { initTemplate: string | null; mediaTemplate: string | null; timescale: number; startNumber: number; timeline: { t?: number; d: number; r?: number }[] } | null => {
 	const segTemplate = findFirst(representation, 'SegmentTemplate')
 		?? findFirst(adaptationSet, 'SegmentTemplate');
@@ -187,9 +214,10 @@ const parseSegmentTemplate = (
 	}
 
 	const timescale = getNumAttr(segTemplate, 'timescale') ?? 1;
-	const startNumber = getNumAttr(segTemplate, 'startNumber') ?? 0;
+	const startNumber = getNumAttr(segTemplate, 'startNumber') ?? 1;
 	const initTemplate = getAttr(segTemplate, 'initialization');
 	const mediaTemplate = getAttr(segTemplate, 'media');
+	const segmentDuration = getNumAttr(segTemplate, 'duration');
 
 	const timeline: { t?: number; d: number; r?: number }[] = [];
 	const timelineEl = findFirst(segTemplate, 'SegmentTimeline');
@@ -206,6 +234,13 @@ const parseSegmentTemplate = (
 
 			timeline.push({ t, d, r });
 		}
+	} else if (segmentDuration !== null) {
+		let repeatCount = 1;
+		if (duration !== null) {
+			repeatCount = Math.ceil(duration * timescale / segmentDuration);
+		}
+
+		timeline.push({ d: segmentDuration, r: repeatCount - 1 });
 	}
 
 	return { initTemplate, mediaTemplate, timescale, startNumber, timeline };
@@ -247,6 +282,8 @@ export class DashDemuxer extends Demuxer {
 		const period = periods[0]!;
 		const adaptationSets = findChildren(period, 'AdaptationSet');
 		const representations: ParsedRepresentation[] = [];
+		const duration = parseIsoDuration(getAttr(period, 'duration'))
+			?? parseIsoDuration(getAttr(mpdEl, 'mediaPresentationDuration'));
 
 		for (const adaptationSet of adaptationSets) {
 			const contentType = this._getContentType(adaptationSet);
@@ -255,16 +292,21 @@ export class DashDemuxer extends Demuxer {
 			}
 
 			const repElements = findChildren(adaptationSet, 'Representation');
-			const adaptBaseUrl = findFirst(adaptationSet, 'BaseURL');
+			assert(this.input._rootSource instanceof PathedSource);
+			const mpdPath = this.input._rootSource.rootPath;
+			const adaptBaseUrlRaw = findFirst(adaptationSet, 'BaseURL')?.text ?? null;
+			const adaptBaseUrl = adaptBaseUrlRaw ? joinPaths(mpdPath, adaptBaseUrlRaw) : null;
 
 			for (const repEl of repElements) {
-				const segInfo = parseSegmentTemplate(adaptationSet, repEl);
+				const segInfo = parseSegmentTemplate(adaptationSet, repEl, duration);
 				if (!segInfo) {
 					continue;
 				}
 
-				const repBaseUrl = findFirst(repEl, 'BaseURL');
-				const baseUrl = repBaseUrl?.text ?? adaptBaseUrl?.text ?? null;
+				const repBaseUrlRaw = findFirst(repEl, 'BaseURL')?.text ?? null;
+				const baseUrl = repBaseUrlRaw
+					? joinPaths(adaptBaseUrl ?? mpdPath, repBaseUrlRaw)
+					: adaptBaseUrl;
 
 				const info: DashRepresentationInfo = {
 					id: getAttr(repEl, 'id'),
@@ -275,6 +317,7 @@ export class DashDemuxer extends Demuxer {
 					startNumber: segInfo.startNumber,
 					timeline: segInfo.timeline,
 					baseUrl,
+					duration,
 				};
 
 				representations.push({
