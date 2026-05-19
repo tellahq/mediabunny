@@ -181,7 +181,7 @@ export class DashSegmentedInput extends SegmentedInput {
 		return segments[index - 1] ?? null;
 	}
 
-	getInputForSegment(segment: Segment) {
+	getInputForSegment(segment: Segment): Input {
 		const dashSegment = segment as DashSegment;
 
 		const cacheEntry = this.inputCache.find(x => x.segment === dashSegment);
@@ -195,7 +195,7 @@ export class DashSegmentedInput extends SegmentedInput {
 			initInput = this.getInputForSegment((dashSegment.initSegment ?? dashSegment.firstSegment)!);
 		}
 
-		const input = new Input({
+		const input: Input = new Input({
 			source: new CustomPathedSource(
 				dashSegment.location.path,
 				async (request) => {

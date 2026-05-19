@@ -2330,6 +2330,7 @@ export class AudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 export class PcmAudioDecoderWrapper extends DecoderWrapper<AudioSample> {
 	codec: PcmAudioCodec;
 	isClosed = false;
+	onDequeue: (() => unknown) | null = null;
 
 	inputSampleSize: 1 | 2 | 3 | 4 | 8;
 	readInputValue: (view: DataView, byteOffset: number) => number;

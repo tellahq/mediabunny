@@ -484,67 +484,75 @@ class SegmentedInputInputTrackBacking implements InputTrackBacking {
 class SegmentedInputInputVideoTrackBacking
 	extends SegmentedInputInputTrackBacking
 	implements InputVideoTrackBacking {
+	get videoFirstInputTrack() {
+		return this.firstInputTrack as InputVideoTrack;
+	}
+
 	override getType() {
 		return 'video' as const;
 	}
 
 	override getCodec() {
-		return this.delegate(() => this.firstInputTrack!._backing.getCodec());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getCodec());
 	}
 
 	getCodedWidth() {
-		return this.delegate(() => this.firstInputTrack!._backing.getCodedWidth());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getCodedWidth());
 	}
 
 	getCodedHeight() {
-		return this.delegate(() => this.firstInputTrack!._backing.getCodedHeight());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getCodedHeight());
 	}
 
 	getSquarePixelWidth() {
-		return this.delegate(() => this.firstInputTrack!._backing.getSquarePixelWidth());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getSquarePixelWidth());
 	}
 
 	getSquarePixelHeight() {
-		return this.delegate(() => this.firstInputTrack!._backing.getSquarePixelHeight());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getSquarePixelHeight());
 	}
 
 	getRotation() {
-		return this.delegate(() => this.firstInputTrack!._backing.getRotation());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getRotation());
 	}
 
 	async getColorSpace(): Promise<VideoColorSpaceInit> {
-		return this.delegate(() => this.firstInputTrack!._backing.getColorSpace());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getColorSpace());
 	}
 
 	async canBeTransparent(): Promise<boolean> {
-		return this.delegate(() => this.firstInputTrack!._backing.canBeTransparent());
+		return this.delegate(() => this.videoFirstInputTrack._backing.canBeTransparent());
 	}
 
 	override async getDecoderConfig(): Promise<VideoDecoderConfig | null> {
-		return this.delegate(() => this.firstInputTrack!._backing.getDecoderConfig());
+		return this.delegate(() => this.videoFirstInputTrack._backing.getDecoderConfig());
 	}
 }
 
 class SegmentedInputInputAudioTrackBacking
 	extends SegmentedInputInputTrackBacking
 	implements InputAudioTrackBacking {
+	get audioFirstInputTrack() {
+		return this.firstInputTrack as InputAudioTrack;
+	}
+
 	override getType() {
 		return 'audio' as const;
 	}
 
 	override getCodec() {
-		return this.delegate(() => this.firstInputTrack._backing.getCodec());
+		return this.delegate(() => this.audioFirstInputTrack._backing.getCodec());
 	}
 
 	getNumberOfChannels() {
-		return this.delegate(() => this.firstInputTrack._backing.getNumberOfChannels());
+		return this.delegate(() => this.audioFirstInputTrack._backing.getNumberOfChannels());
 	}
 
 	getSampleRate() {
-		return this.delegate(() => this.firstInputTrack._backing.getSampleRate());
+		return this.delegate(() => this.audioFirstInputTrack._backing.getSampleRate());
 	}
 
 	override async getDecoderConfig(): Promise<AudioDecoderConfig | null> {
-		return this.delegate(() => this.firstInputTrack._backing.getDecoderConfig());
+		return this.delegate(() => this.audioFirstInputTrack._backing.getDecoderConfig());
 	}
 }

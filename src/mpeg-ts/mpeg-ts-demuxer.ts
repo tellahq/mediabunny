@@ -1654,28 +1654,32 @@ abstract class MpegTsTrackBacking implements InputTrackBacking {
 }
 
 class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTrackBacking {
+	get videoElementaryStream() {
+		return this.elementaryStream as ElementaryVideoStream;
+	}
+
 	getType() {
 		return 'video' as const;
 	}
 
 	override getCodec(): VideoCodec {
-		return this.elementaryStream.info.codec;
+		return this.videoElementaryStream.info.codec;
 	}
 
 	getCodedWidth() {
-		return this.elementaryStream.info.width;
+		return this.videoElementaryStream.info.width;
 	}
 
 	getCodedHeight() {
-		return this.elementaryStream.info.height;
+		return this.videoElementaryStream.info.height;
 	}
 
 	getSquarePixelWidth() {
-		return this.elementaryStream.info.squarePixelWidth;
+		return this.videoElementaryStream.info.squarePixelWidth;
 	}
 
 	getSquarePixelHeight() {
-		return this.elementaryStream.info.squarePixelHeight;
+		return this.videoElementaryStream.info.squarePixelHeight;
 	}
 
 	getRotation(): Rotation {
@@ -1683,7 +1687,7 @@ class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTr
 	}
 
 	async getColorSpace(): Promise<VideoColorSpaceInit> {
-		return this.elementaryStream.info.colorSpace;
+		return this.videoElementaryStream.info.colorSpace;
 	}
 
 	async canBeTransparent() {
@@ -1691,8 +1695,8 @@ class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTr
 	}
 
 	async getDecoderConfig(): Promise<VideoDecoderConfig> {
-		assert(this.elementaryStream.info.decoderConfig);
-		return this.elementaryStream.info.decoderConfig;
+		assert(this.videoElementaryStream.info.decoderConfig);
+		return this.videoElementaryStream.info.decoderConfig;
 	}
 
 	override allPacketsAreKeyPackets(): boolean {
@@ -1700,30 +1704,34 @@ class MpegTsVideoTrackBacking extends MpegTsTrackBacking implements InputVideoTr
 	}
 
 	override getReorderSize(): number {
-		return this.elementaryStream.info.reorderSize;
+		return this.videoElementaryStream.info.reorderSize;
 	}
 }
 
 class MpegTsAudioTrackBacking extends MpegTsTrackBacking implements InputAudioTrackBacking {
+	get audioElementaryStream() {
+		return this.elementaryStream as ElementaryAudioStream;
+	}
+
 	getType() {
 		return 'audio' as const;
 	}
 
 	override getCodec(): AudioCodec {
-		return this.elementaryStream.info.codec;
+		return this.audioElementaryStream.info.codec;
 	}
 
 	getNumberOfChannels() {
-		return this.elementaryStream.info.numberOfChannels;
+		return this.audioElementaryStream.info.numberOfChannels;
 	}
 
 	getSampleRate() {
-		return this.elementaryStream.info.sampleRate;
+		return this.audioElementaryStream.info.sampleRate;
 	}
 
 	async getDecoderConfig(): Promise<AudioDecoderConfig> {
-		assert(this.elementaryStream.info.decoderConfig);
-		return this.elementaryStream.info.decoderConfig;
+		assert(this.audioElementaryStream.info.decoderConfig);
+		return this.audioElementaryStream.info.decoderConfig;
 	}
 
 	override allPacketsAreKeyPackets(): boolean {

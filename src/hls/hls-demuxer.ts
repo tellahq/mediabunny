@@ -60,8 +60,8 @@ type InternalTrack = {
 		numberOfChannels: number | null;
 	};
 };
-type InternalVideoTrack = InternalTrack & { info: { type: 'video' } };
-type InternalAudioTrack = InternalTrack & { info: { type: 'audio' } };
+type InternalVideoTrack = InternalTrack & { info: Extract<InternalTrack['info'], { type: 'video' }> };
+type InternalAudioTrack = InternalTrack & { info: Extract<InternalTrack['info'], { type: 'audio' }> };
 
 export class HlsDemuxer extends Demuxer {
 	metadataPromise: Promise<void> | null = null;
@@ -815,6 +815,10 @@ class HlsInputVideoTrackBacking
 		return this.internalTrack.backingTrack as InputVideoTrackBacking | null;
 	}
 
+	get videoInternalTrack() {
+		return this.internalTrack as InternalVideoTrack;
+	}
+
 	getType() {
 		return 'video' as const;
 	}
@@ -845,7 +849,7 @@ class HlsInputVideoTrackBacking
 			return null;
 		}
 
-		return this.internalTrack.info.width;
+		return this.videoInternalTrack.info.width;
 	}
 
 	getMetadataDisplayHeight(): number | null {
@@ -853,7 +857,7 @@ class HlsInputVideoTrackBacking
 			return null;
 		}
 
-		return this.internalTrack.info.height;
+		return this.videoInternalTrack.info.height;
 	}
 
 	getRotation(): MaybePromise<Rotation> {
@@ -894,6 +898,10 @@ class HlsInputAudioTrackBacking
 		return this.internalTrack.backingTrack as InputAudioTrackBacking | null;
 	}
 
+	get audioInternalTrack() {
+		return this.internalTrack as InternalAudioTrack;
+	}
+
 	getType() {
 		return 'audio' as const;
 	}
@@ -904,8 +912,8 @@ class HlsInputAudioTrackBacking
 	}
 
 	getNumberOfChannels(): MaybePromise<number> {
-		if (this.internalTrack.info.numberOfChannels !== null) {
-			return this.internalTrack.info.numberOfChannels;
+		if (this.audioInternalTrack.info.numberOfChannels !== null) {
+			return this.audioInternalTrack.info.numberOfChannels;
 		}
 
 		return this.delegate(() => this.backingAudioTrack!.getNumberOfChannels());

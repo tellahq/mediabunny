@@ -742,11 +742,10 @@ export abstract class SampleCursor<
 			} else {
 				if (this._packetCursor.current) {
 					// We need to see if the target packet is ahead of the decoder, GOP-wise
-					let nextKey = this._packetReader.getNextKey(
+					const nextKey = await this._packetReader.getNextKey(
 						this._packetCursor.current,
 						{ verifyKeyPackets: true },
 					);
-					if (nextKey instanceof Promise) nextKey = await nextKey;
 
 					needsNewPump = !!nextKey && targetPacket.sequenceNumber >= nextKey.sequenceNumber;
 				} else {
@@ -896,12 +895,10 @@ export abstract class SampleCursor<
 		// are ascending in timestamp, so we first get the current key (based on a presentation-order search), then
 		// get the next key after that, which will be the answer we're looking for.
 
-		let key = this._packetReader.getKeyAt(timestampToCheck, { verifyKeyPackets: true });
-		if (key instanceof Promise) key = await key;
+		const key = await this._packetReader.getKeyAt(timestampToCheck, { verifyKeyPackets: true });
 		assert(key); // Must be
 
-		let nextKey = this._packetReader.getNextKey(key, { verifyKeyPackets: true });
-		if (nextKey instanceof Promise) nextKey = await nextKey;
+		const nextKey = await this._packetReader.getNextKey(key, { verifyKeyPackets: true });
 
 		if (!nextKey) {
 			this._setCurrentRaw(null);
@@ -918,8 +915,7 @@ export abstract class SampleCursor<
 		this._ensureNotClosed();
 
 		if (this._nextIsFirst) {
-			let first = this._packetReader.getFirst();
-			if (first instanceof Promise) first = await first;
+			const first = await this._packetReader.getFirst();
 
 			return res.set(!!first);
 		}
@@ -1157,7 +1153,9 @@ export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCu
 
 	/** @internal */
 	override async _initDecoder(): Promise<DecoderWrapper<VideoSample>> {
-		if (!(await this.track.canDecode())) {
+		const track = this.track as InputVideoTrack;
+
+		if (!(await track.canDecode())) {
 			throw new Error(
 				'This video track cannot be decoded by this browser. Make sure to check decodability before using'
 				+ ' a track.',
@@ -1168,17 +1166,17 @@ export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCu
 			throw new Error('Fake decoder init error!');
 		}
 
-		const decoderConfig = await this.track.getDecoderConfig();
+		const decoderConfig = await track.getDecoderConfig();
 		assert(decoderConfig);
-		assert(this.track.codec);
+		assert(track.codec);
 
 		const decoder = new VideoDecoderWrapper(
 			sample => this._onDecoderSample(sample),
 			error => this._onDecoderError(error),
-			this.track.codec,
+			track.codec,
 			decoderConfig,
-			this.track.rotation,
-			this.track.timeResolution,
+			track.rotation,
+			track.timeResolution,
 		);
 
 		decoder.onDequeue = () => this._onDecoderDequeue();
@@ -1202,7 +1200,9 @@ export class AudioSampleCursor<TransformedSample = AudioSample> extends SampleCu
 
 	/** @internal */
 	override async _initDecoder(): Promise<DecoderWrapper<AudioSample>> {
-		if (!(await this.track.canDecode())) {
+		const track = this.track as InputAudioTrack;
+
+		if (!(await track.canDecode())) {
 			throw new Error(
 				'This audio track cannot be decoded by this browser. Make sure to check decodability before using'
 				+ ' a track.',
@@ -1213,8 +1213,8 @@ export class AudioSampleCursor<TransformedSample = AudioSample> extends SampleCu
 			throw new Error('Fake decoder init error!');
 		}
 
-		const codec = this.track.codec;
-		const decoderConfig = await this.track.getDecoderConfig();
+		const codec = track.codec;
+		const decoderConfig = await track.getDecoderConfig();
 		assert(codec && decoderConfig);
 
 		let decoder: AudioDecoderWrapper | PcmAudioDecoderWrapper;
