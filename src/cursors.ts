@@ -231,6 +231,7 @@ export type SampleTransformer<Sample, TransformedSample> = (sample: Sample) => T
 export type SampleCursorOptions<Sample, TransformedSample> = {
 	autoClose?: boolean;
 	transform?: SampleTransformer<Sample, TransformedSample>;
+	maxBufferSize?: number;
 };
 
 const validateSampleCursorOptions = <Sample, TransformedSample>(
@@ -245,6 +246,12 @@ const validateSampleCursorOptions = <Sample, TransformedSample>(
 	if (options.transform !== undefined && typeof options.transform !== 'function') {
 		throw new TypeError('options.transform, when provided, must be a function.');
 	}
+	if (
+		options.maxBufferSize !== undefined
+		&& (!Number.isInteger(options.maxBufferSize) || options.maxBufferSize < 1)
+	) {
+		throw new TypeError('options.maxBufferSize, when provided, must be a positive integer.');
+	}
 };
 
 export abstract class SampleCursor<
@@ -256,6 +263,7 @@ export abstract class SampleCursor<
 
 	private _transform: SampleTransformer<Sample, TransformedSample>;
 	private _autoClose: boolean;
+	private _maxBufferSize: number;
 
 	private _mutex = new AsyncMutex();
 
@@ -342,6 +350,7 @@ export abstract class SampleCursor<
 		this._packetCursor = new PacketCursor(track);
 		this._autoClose = options.autoClose ?? true;
 		this._transform = options.transform ?? (sample => sample as unknown as TransformedSample);
+		this._maxBufferSize = options.maxBufferSize ?? 4;
 
 		track.input._openSampleCursors.add(this);
 
@@ -980,7 +989,7 @@ export abstract class SampleCursor<
 
 				const decodeQueueSize = this._decoder.getDecodeQueueSize();
 				if (
-					this._sampleQueue.length + decodeQueueSize >= 4
+					this._sampleQueue.length + decodeQueueSize >= this._maxBufferSize
 					&& !this._pumpStopQueued
 					&& !(this._debug.enabled && this._debug.unthrottledPump)
 				) {
