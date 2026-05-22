@@ -23,8 +23,7 @@
         "require": "./dist/bundles/mediabunny.node.cjs"
       },
       "default": "./dist/modules/src/index.js"
-    },
-    "./src/*": "./src/*"
+    }
   },
   "files": [
     "README.md",
