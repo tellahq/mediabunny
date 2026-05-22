@@ -1,5 +1,5 @@
 /*!
- * Copyright (c) 2025-present, Vanilagy and contributors
+ * Copyright (c) 2026-present, Vanilagy and contributors
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,7 +8,13 @@
 
 import { PCM_AUDIO_CODECS } from './codec';
 import { InputAudioTrack, InputTrack, InputVideoTrack } from './input-track';
-import { AudioDecoderWrapper, DecoderWrapper, PcmAudioDecoderWrapper, VideoDecoderWrapper } from './media-sink';
+import {
+	AudioDecoderWrapper,
+	DecoderWrapper,
+	type PacketRetrievalOptions,
+	PcmAudioDecoderWrapper,
+	VideoDecoderWrapper,
+} from './media-sink';
 import {
 	assert,
 	AsyncMutex,
@@ -28,7 +34,6 @@ import {
 import {
 	EncodedPacket,
 	PacketReader,
-	PacketRetrievalOptions,
 	validatePacketRetrievalOptions,
 	validateTimestamp,
 } from './packet';
@@ -36,6 +41,10 @@ import { AudioSample, clampCropRectangle, CropRectangle, validateCropRectangle, 
 
 polyfillSymbolDispose();
 
+/**
+ * Cursor for sequentially reading encoded packets from an input track.
+ * @public
+ */
 export class PacketCursor<T extends InputTrack = InputTrack> {
 	track: T;
 	current: EncodedPacket | null = null;
@@ -226,8 +235,16 @@ type PendingRequest<T> = {
 	successor: PendingRequest<T> | null;
 };
 
+/**
+ * Transforms decoded samples returned by a sample cursor.
+ * @public
+ */
 export type SampleTransformer<Sample, TransformedSample> = (sample: Sample) => TransformedSample;
 
+/**
+ * Options for decoded sample cursors.
+ * @public
+ */
 export type SampleCursorOptions<Sample, TransformedSample> = {
 	autoClose?: boolean;
 	transform?: SampleTransformer<Sample, TransformedSample>;
@@ -254,6 +271,10 @@ const validateSampleCursorOptions = <Sample, TransformedSample>(
 	}
 };
 
+/**
+ * Base cursor for decoding samples from an input track.
+ * @public
+ */
 export abstract class SampleCursor<
 	Sample extends VideoSample | AudioSample,
 	TransformedSample = Sample,
@@ -1147,6 +1168,10 @@ export abstract class SampleCursor<
 	}
 }
 
+/**
+ * Cursor for decoding video samples from an input video track.
+ * @public
+ */
 export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCursor<VideoSample, TransformedSample> {
 	constructor(
 		track: InputVideoTrack,
@@ -1197,6 +1222,10 @@ export class VideoSampleCursor<TransformedSample = VideoSample> extends SampleCu
 	}
 }
 
+/**
+ * Cursor for decoding audio samples from an input audio track.
+ * @public
+ */
 export class AudioSampleCursor<TransformedSample = AudioSample> extends SampleCursor<AudioSample, TransformedSample> {
 	constructor(
 		track: InputAudioTrack,
@@ -1318,6 +1347,10 @@ export type CanvasTransformerOptions = {
 	poolSize?: number;
 };
 
+/**
+ * Creates a transformer that converts video samples to canvases.
+ * @public
+ */
 export const canvasTransformer = (
 	options: CanvasTransformerOptions = {},
 ): SampleTransformer<VideoSample, WrappedCanvas> => {
