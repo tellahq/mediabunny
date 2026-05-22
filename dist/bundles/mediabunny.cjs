@@ -244,6 +244,178 @@ var Mediabunny = (() => {
     registerVideoSampleTransformer: () => registerVideoSampleTransformer
   });
 
+  // shared/bitstream.ts
+  var Bitstream = class _Bitstream {
+    constructor(bytes2) {
+      this.bytes = bytes2;
+      /** Current offset in bits. */
+      this.pos = 0;
+    }
+    seekToByte(byteOffset) {
+      this.pos = 8 * byteOffset;
+    }
+    readBit() {
+      const byteIndex = Math.floor(this.pos / 8);
+      const byte = this.bytes[byteIndex] ?? 0;
+      const bitIndex = 7 - (this.pos & 7);
+      const bit = (byte & 1 << bitIndex) >> bitIndex;
+      this.pos++;
+      return bit;
+    }
+    readBits(n) {
+      if (n === 1) {
+        return this.readBit();
+      }
+      let result = 0;
+      for (let i = 0; i < n; i++) {
+        result <<= 1;
+        result |= this.readBit();
+      }
+      return result;
+    }
+    writeBits(n, value) {
+      const end = this.pos + n;
+      for (let i = this.pos; i < end; i++) {
+        const byteIndex = Math.floor(i / 8);
+        let byte = this.bytes[byteIndex];
+        const bitIndex = 7 - (i & 7);
+        byte &= ~(1 << bitIndex);
+        byte |= (value & 1 << end - i - 1) >> end - i - 1 << bitIndex;
+        this.bytes[byteIndex] = byte;
+      }
+      this.pos = end;
+    }
+    readAlignedByte() {
+      if (this.pos % 8 !== 0) {
+        throw new Error("Bitstream is not byte-aligned.");
+      }
+      const byteIndex = this.pos / 8;
+      const byte = this.bytes[byteIndex] ?? 0;
+      this.pos += 8;
+      return byte;
+    }
+    skipBits(n) {
+      this.pos += n;
+    }
+    getBitsLeft() {
+      return this.bytes.length * 8 - this.pos;
+    }
+    clone() {
+      const clone = new _Bitstream(this.bytes);
+      clone.pos = this.pos;
+      return clone;
+    }
+  };
+
+  // shared/aac-misc.ts
+  var aacFrequencyTable = [
+    96e3,
+    88200,
+    64e3,
+    48e3,
+    44100,
+    32e3,
+    24e3,
+    22050,
+    16e3,
+    12e3,
+    11025,
+    8e3,
+    7350
+  ];
+  var aacChannelMap = [-1, 1, 2, 3, 4, 5, 6, 8];
+  var parseAacAudioSpecificConfig = (bytes2) => {
+    if (!bytes2 || bytes2.byteLength < 2) {
+      throw new TypeError("AAC description must be at least 2 bytes long.");
+    }
+    const bitstream = new Bitstream(bytes2);
+    let objectType = bitstream.readBits(5);
+    if (objectType === 31) {
+      objectType = 32 + bitstream.readBits(6);
+    }
+    const frequencyIndex = bitstream.readBits(4);
+    let sampleRate = null;
+    if (frequencyIndex === 15) {
+      sampleRate = bitstream.readBits(24);
+    } else {
+      if (frequencyIndex < aacFrequencyTable.length) {
+        sampleRate = aacFrequencyTable[frequencyIndex];
+      }
+    }
+    const channelConfiguration = bitstream.readBits(4);
+    let numberOfChannels = null;
+    if (channelConfiguration >= 1 && channelConfiguration <= 7) {
+      numberOfChannels = aacChannelMap[channelConfiguration];
+    }
+    return {
+      objectType,
+      frequencyIndex,
+      sampleRate,
+      channelConfiguration,
+      numberOfChannels
+    };
+  };
+  var buildAacAudioSpecificConfig = (config) => {
+    let frequencyIndex = aacFrequencyTable.indexOf(config.sampleRate);
+    let customSampleRate = null;
+    if (frequencyIndex === -1) {
+      frequencyIndex = 15;
+      customSampleRate = config.sampleRate;
+    }
+    const channelConfiguration = aacChannelMap.indexOf(config.numberOfChannels);
+    if (channelConfiguration === -1) {
+      throw new TypeError(`Unsupported number of channels: ${config.numberOfChannels}`);
+    }
+    let bitCount = 5 + 4 + 4;
+    if (config.objectType >= 32) {
+      bitCount += 6;
+    }
+    if (frequencyIndex === 15) {
+      bitCount += 24;
+    }
+    const byteCount = Math.ceil(bitCount / 8);
+    const bytes2 = new Uint8Array(byteCount);
+    const bitstream = new Bitstream(bytes2);
+    if (config.objectType < 32) {
+      bitstream.writeBits(5, config.objectType);
+    } else {
+      bitstream.writeBits(5, 31);
+      bitstream.writeBits(6, config.objectType - 32);
+    }
+    bitstream.writeBits(4, frequencyIndex);
+    if (frequencyIndex === 15) {
+      bitstream.writeBits(24, customSampleRate);
+    }
+    bitstream.writeBits(4, channelConfiguration);
+    return bytes2;
+  };
+  var buildAdtsHeaderTemplate = (config) => {
+    const header = new Uint8Array(7);
+    const bitstream = new Bitstream(header);
+    const { objectType, frequencyIndex, channelConfiguration } = config;
+    const profile = objectType - 1;
+    bitstream.writeBits(12, 4095);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(2, 0);
+    bitstream.writeBits(1, 1);
+    bitstream.writeBits(2, profile);
+    bitstream.writeBits(4, frequencyIndex);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(3, channelConfiguration);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.skipBits(13);
+    bitstream.writeBits(11, 2047);
+    bitstream.writeBits(2, 0);
+    return { header, bitstream };
+  };
+  var writeAdtsFrameLength = (bitstream, frameLength) => {
+    bitstream.pos = 30;
+    bitstream.writeBits(13, frameLength);
+  };
+
   // src/misc.ts
   function assert(x) {
     if (!x) {
@@ -1235,327 +1407,6 @@ var Mediabunny = (() => {
     return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype && Object.values(value).every((x) => typeof x === "string");
   };
 
-  // src/metadata.ts
-  var RichImageData = class {
-    /** Creates a new {@link RichImageData}. */
-    constructor(data, mimeType) {
-      this.data = data;
-      this.mimeType = mimeType;
-      if (!(data instanceof Uint8Array)) {
-        throw new TypeError("data must be a Uint8Array.");
-      }
-      if (typeof mimeType !== "string") {
-        throw new TypeError("mimeType must be a string.");
-      }
-    }
-  };
-  var AttachedFile = class {
-    /** Creates a new {@link AttachedFile}. */
-    constructor(data, mimeType, name, description) {
-      this.data = data;
-      this.mimeType = mimeType;
-      this.name = name;
-      this.description = description;
-      if (!(data instanceof Uint8Array)) {
-        throw new TypeError("data must be a Uint8Array.");
-      }
-      if (mimeType !== void 0 && typeof mimeType !== "string") {
-        throw new TypeError("mimeType, when provided, must be a string.");
-      }
-      if (name !== void 0 && typeof name !== "string") {
-        throw new TypeError("name, when provided, must be a string.");
-      }
-      if (description !== void 0 && typeof description !== "string") {
-        throw new TypeError("description, when provided, must be a string.");
-      }
-    }
-  };
-  var validateMetadataTags = (tags) => {
-    if (!tags || typeof tags !== "object") {
-      throw new TypeError("tags must be an object.");
-    }
-    if (tags.title !== void 0 && typeof tags.title !== "string") {
-      throw new TypeError("tags.title, when provided, must be a string.");
-    }
-    if (tags.description !== void 0 && typeof tags.description !== "string") {
-      throw new TypeError("tags.description, when provided, must be a string.");
-    }
-    if (tags.artist !== void 0 && typeof tags.artist !== "string") {
-      throw new TypeError("tags.artist, when provided, must be a string.");
-    }
-    if (tags.album !== void 0 && typeof tags.album !== "string") {
-      throw new TypeError("tags.album, when provided, must be a string.");
-    }
-    if (tags.albumArtist !== void 0 && typeof tags.albumArtist !== "string") {
-      throw new TypeError("tags.albumArtist, when provided, must be a string.");
-    }
-    if (tags.trackNumber !== void 0 && (!Number.isInteger(tags.trackNumber) || tags.trackNumber <= 0)) {
-      throw new TypeError("tags.trackNumber, when provided, must be a positive integer.");
-    }
-    if (tags.tracksTotal !== void 0 && (!Number.isInteger(tags.tracksTotal) || tags.tracksTotal <= 0)) {
-      throw new TypeError("tags.tracksTotal, when provided, must be a positive integer.");
-    }
-    if (tags.discNumber !== void 0 && (!Number.isInteger(tags.discNumber) || tags.discNumber <= 0)) {
-      throw new TypeError("tags.discNumber, when provided, must be a positive integer.");
-    }
-    if (tags.discsTotal !== void 0 && (!Number.isInteger(tags.discsTotal) || tags.discsTotal <= 0)) {
-      throw new TypeError("tags.discsTotal, when provided, must be a positive integer.");
-    }
-    if (tags.genre !== void 0 && typeof tags.genre !== "string") {
-      throw new TypeError("tags.genre, when provided, must be a string.");
-    }
-    if (tags.date !== void 0 && (!(tags.date instanceof Date) || Number.isNaN(tags.date.getTime()))) {
-      throw new TypeError("tags.date, when provided, must be a valid Date.");
-    }
-    if (tags.lyrics !== void 0 && typeof tags.lyrics !== "string") {
-      throw new TypeError("tags.lyrics, when provided, must be a string.");
-    }
-    if (tags.images !== void 0) {
-      if (!Array.isArray(tags.images)) {
-        throw new TypeError("tags.images, when provided, must be an array.");
-      }
-      for (const image of tags.images) {
-        if (!image || typeof image !== "object") {
-          throw new TypeError("Each image in tags.images must be an object.");
-        }
-        if (!(image.data instanceof Uint8Array)) {
-          throw new TypeError("Each image.data must be a Uint8Array.");
-        }
-        if (typeof image.mimeType !== "string") {
-          throw new TypeError("Each image.mimeType must be a string.");
-        }
-        if (!["coverFront", "coverBack", "unknown"].includes(image.kind)) {
-          throw new TypeError("Each image.kind must be 'coverFront', 'coverBack', or 'unknown'.");
-        }
-      }
-    }
-    if (tags.comment !== void 0 && typeof tags.comment !== "string") {
-      throw new TypeError("tags.comment, when provided, must be a string.");
-    }
-    if (tags.raw !== void 0) {
-      if (!tags.raw || typeof tags.raw !== "object") {
-        throw new TypeError("tags.raw, when provided, must be an object.");
-      }
-      for (const value of Object.values(tags.raw)) {
-        if (value !== null && typeof value !== "string" && !(value instanceof Uint8Array) && !(value instanceof RichImageData) && !(value instanceof AttachedFile) && !isRecordStringString(value)) {
-          throw new TypeError(
-            "Each value in tags.raw must be a string, Uint8Array, RichImageData, AttachedFile, Record<string, string>, or null."
-          );
-        }
-      }
-    }
-  };
-  var metadataTagsAreEmpty = (tags) => {
-    return tags.title === void 0 && tags.description === void 0 && tags.artist === void 0 && tags.album === void 0 && tags.albumArtist === void 0 && tags.trackNumber === void 0 && tags.tracksTotal === void 0 && tags.discNumber === void 0 && tags.discsTotal === void 0 && tags.genre === void 0 && tags.date === void 0 && tags.lyrics === void 0 && (!tags.images || tags.images.length === 0) && tags.comment === void 0 && (tags.raw === void 0 || Object.keys(tags.raw).length === 0);
-  };
-  var DEFAULT_TRACK_DISPOSITION = {
-    default: true,
-    primary: true,
-    forced: false,
-    original: false,
-    commentary: false,
-    hearingImpaired: false,
-    visuallyImpaired: false
-  };
-  var validateTrackDisposition = (disposition) => {
-    if (!disposition || typeof disposition !== "object") {
-      throw new TypeError("disposition must be an object.");
-    }
-    if (disposition.default !== void 0 && typeof disposition.default !== "boolean") {
-      throw new TypeError("disposition.default must be a boolean.");
-    }
-    if (disposition.primary !== void 0 && typeof disposition.primary !== "boolean") {
-      throw new TypeError("disposition.primary must be a boolean.");
-    }
-    if (disposition.forced !== void 0 && typeof disposition.forced !== "boolean") {
-      throw new TypeError("disposition.forced must be a boolean.");
-    }
-    if (disposition.original !== void 0 && typeof disposition.original !== "boolean") {
-      throw new TypeError("disposition.original must be a boolean.");
-    }
-    if (disposition.commentary !== void 0 && typeof disposition.commentary !== "boolean") {
-      throw new TypeError("disposition.commentary must be a boolean.");
-    }
-    if (disposition.hearingImpaired !== void 0 && typeof disposition.hearingImpaired !== "boolean") {
-      throw new TypeError("disposition.hearingImpaired must be a boolean.");
-    }
-    if (disposition.visuallyImpaired !== void 0 && typeof disposition.visuallyImpaired !== "boolean") {
-      throw new TypeError("disposition.visuallyImpaired must be a boolean.");
-    }
-  };
-
-  // shared/bitstream.ts
-  var Bitstream = class _Bitstream {
-    constructor(bytes2) {
-      this.bytes = bytes2;
-      /** Current offset in bits. */
-      this.pos = 0;
-    }
-    seekToByte(byteOffset) {
-      this.pos = 8 * byteOffset;
-    }
-    readBit() {
-      const byteIndex = Math.floor(this.pos / 8);
-      const byte = this.bytes[byteIndex] ?? 0;
-      const bitIndex = 7 - (this.pos & 7);
-      const bit = (byte & 1 << bitIndex) >> bitIndex;
-      this.pos++;
-      return bit;
-    }
-    readBits(n) {
-      if (n === 1) {
-        return this.readBit();
-      }
-      let result = 0;
-      for (let i = 0; i < n; i++) {
-        result <<= 1;
-        result |= this.readBit();
-      }
-      return result;
-    }
-    writeBits(n, value) {
-      const end = this.pos + n;
-      for (let i = this.pos; i < end; i++) {
-        const byteIndex = Math.floor(i / 8);
-        let byte = this.bytes[byteIndex];
-        const bitIndex = 7 - (i & 7);
-        byte &= ~(1 << bitIndex);
-        byte |= (value & 1 << end - i - 1) >> end - i - 1 << bitIndex;
-        this.bytes[byteIndex] = byte;
-      }
-      this.pos = end;
-    }
-    readAlignedByte() {
-      if (this.pos % 8 !== 0) {
-        throw new Error("Bitstream is not byte-aligned.");
-      }
-      const byteIndex = this.pos / 8;
-      const byte = this.bytes[byteIndex] ?? 0;
-      this.pos += 8;
-      return byte;
-    }
-    skipBits(n) {
-      this.pos += n;
-    }
-    getBitsLeft() {
-      return this.bytes.length * 8 - this.pos;
-    }
-    clone() {
-      const clone = new _Bitstream(this.bytes);
-      clone.pos = this.pos;
-      return clone;
-    }
-  };
-
-  // shared/aac-misc.ts
-  var aacFrequencyTable = [
-    96e3,
-    88200,
-    64e3,
-    48e3,
-    44100,
-    32e3,
-    24e3,
-    22050,
-    16e3,
-    12e3,
-    11025,
-    8e3,
-    7350
-  ];
-  var aacChannelMap = [-1, 1, 2, 3, 4, 5, 6, 8];
-  var parseAacAudioSpecificConfig = (bytes2) => {
-    if (!bytes2 || bytes2.byteLength < 2) {
-      throw new TypeError("AAC description must be at least 2 bytes long.");
-    }
-    const bitstream = new Bitstream(bytes2);
-    let objectType = bitstream.readBits(5);
-    if (objectType === 31) {
-      objectType = 32 + bitstream.readBits(6);
-    }
-    const frequencyIndex = bitstream.readBits(4);
-    let sampleRate = null;
-    if (frequencyIndex === 15) {
-      sampleRate = bitstream.readBits(24);
-    } else {
-      if (frequencyIndex < aacFrequencyTable.length) {
-        sampleRate = aacFrequencyTable[frequencyIndex];
-      }
-    }
-    const channelConfiguration = bitstream.readBits(4);
-    let numberOfChannels = null;
-    if (channelConfiguration >= 1 && channelConfiguration <= 7) {
-      numberOfChannels = aacChannelMap[channelConfiguration];
-    }
-    return {
-      objectType,
-      frequencyIndex,
-      sampleRate,
-      channelConfiguration,
-      numberOfChannels
-    };
-  };
-  var buildAacAudioSpecificConfig = (config) => {
-    let frequencyIndex = aacFrequencyTable.indexOf(config.sampleRate);
-    let customSampleRate = null;
-    if (frequencyIndex === -1) {
-      frequencyIndex = 15;
-      customSampleRate = config.sampleRate;
-    }
-    const channelConfiguration = aacChannelMap.indexOf(config.numberOfChannels);
-    if (channelConfiguration === -1) {
-      throw new TypeError(`Unsupported number of channels: ${config.numberOfChannels}`);
-    }
-    let bitCount = 5 + 4 + 4;
-    if (config.objectType >= 32) {
-      bitCount += 6;
-    }
-    if (frequencyIndex === 15) {
-      bitCount += 24;
-    }
-    const byteCount = Math.ceil(bitCount / 8);
-    const bytes2 = new Uint8Array(byteCount);
-    const bitstream = new Bitstream(bytes2);
-    if (config.objectType < 32) {
-      bitstream.writeBits(5, config.objectType);
-    } else {
-      bitstream.writeBits(5, 31);
-      bitstream.writeBits(6, config.objectType - 32);
-    }
-    bitstream.writeBits(4, frequencyIndex);
-    if (frequencyIndex === 15) {
-      bitstream.writeBits(24, customSampleRate);
-    }
-    bitstream.writeBits(4, channelConfiguration);
-    return bytes2;
-  };
-  var buildAdtsHeaderTemplate = (config) => {
-    const header = new Uint8Array(7);
-    const bitstream = new Bitstream(header);
-    const { objectType, frequencyIndex, channelConfiguration } = config;
-    const profile = objectType - 1;
-    bitstream.writeBits(12, 4095);
-    bitstream.writeBits(1, 0);
-    bitstream.writeBits(2, 0);
-    bitstream.writeBits(1, 1);
-    bitstream.writeBits(2, profile);
-    bitstream.writeBits(4, frequencyIndex);
-    bitstream.writeBits(1, 0);
-    bitstream.writeBits(3, channelConfiguration);
-    bitstream.writeBits(1, 0);
-    bitstream.writeBits(1, 0);
-    bitstream.writeBits(1, 0);
-    bitstream.writeBits(1, 0);
-    bitstream.skipBits(13);
-    bitstream.writeBits(11, 2047);
-    bitstream.writeBits(2, 0);
-    return { header, bitstream };
-  };
-  var writeAdtsFrameLength = (bitstream, frameLength) => {
-    bitstream.pos = 30;
-    bitstream.writeBits(13, frameLength);
-  };
-
   // src/codec.ts
   var VIDEO_CODECS = [
     "avc",
@@ -2403,6 +2254,155 @@ var Mediabunny = (() => {
     }
     if (typeof metadata.config.description !== "string") {
       throw new TypeError("Subtitle metadata config description must be a string.");
+    }
+  };
+
+  // src/metadata.ts
+  var RichImageData = class {
+    /** Creates a new {@link RichImageData}. */
+    constructor(data, mimeType) {
+      this.data = data;
+      this.mimeType = mimeType;
+      if (!(data instanceof Uint8Array)) {
+        throw new TypeError("data must be a Uint8Array.");
+      }
+      if (typeof mimeType !== "string") {
+        throw new TypeError("mimeType must be a string.");
+      }
+    }
+  };
+  var AttachedFile = class {
+    /** Creates a new {@link AttachedFile}. */
+    constructor(data, mimeType, name, description) {
+      this.data = data;
+      this.mimeType = mimeType;
+      this.name = name;
+      this.description = description;
+      if (!(data instanceof Uint8Array)) {
+        throw new TypeError("data must be a Uint8Array.");
+      }
+      if (mimeType !== void 0 && typeof mimeType !== "string") {
+        throw new TypeError("mimeType, when provided, must be a string.");
+      }
+      if (name !== void 0 && typeof name !== "string") {
+        throw new TypeError("name, when provided, must be a string.");
+      }
+      if (description !== void 0 && typeof description !== "string") {
+        throw new TypeError("description, when provided, must be a string.");
+      }
+    }
+  };
+  var validateMetadataTags = (tags) => {
+    if (!tags || typeof tags !== "object") {
+      throw new TypeError("tags must be an object.");
+    }
+    if (tags.title !== void 0 && typeof tags.title !== "string") {
+      throw new TypeError("tags.title, when provided, must be a string.");
+    }
+    if (tags.description !== void 0 && typeof tags.description !== "string") {
+      throw new TypeError("tags.description, when provided, must be a string.");
+    }
+    if (tags.artist !== void 0 && typeof tags.artist !== "string") {
+      throw new TypeError("tags.artist, when provided, must be a string.");
+    }
+    if (tags.album !== void 0 && typeof tags.album !== "string") {
+      throw new TypeError("tags.album, when provided, must be a string.");
+    }
+    if (tags.albumArtist !== void 0 && typeof tags.albumArtist !== "string") {
+      throw new TypeError("tags.albumArtist, when provided, must be a string.");
+    }
+    if (tags.trackNumber !== void 0 && (!Number.isInteger(tags.trackNumber) || tags.trackNumber <= 0)) {
+      throw new TypeError("tags.trackNumber, when provided, must be a positive integer.");
+    }
+    if (tags.tracksTotal !== void 0 && (!Number.isInteger(tags.tracksTotal) || tags.tracksTotal <= 0)) {
+      throw new TypeError("tags.tracksTotal, when provided, must be a positive integer.");
+    }
+    if (tags.discNumber !== void 0 && (!Number.isInteger(tags.discNumber) || tags.discNumber <= 0)) {
+      throw new TypeError("tags.discNumber, when provided, must be a positive integer.");
+    }
+    if (tags.discsTotal !== void 0 && (!Number.isInteger(tags.discsTotal) || tags.discsTotal <= 0)) {
+      throw new TypeError("tags.discsTotal, when provided, must be a positive integer.");
+    }
+    if (tags.genre !== void 0 && typeof tags.genre !== "string") {
+      throw new TypeError("tags.genre, when provided, must be a string.");
+    }
+    if (tags.date !== void 0 && (!(tags.date instanceof Date) || Number.isNaN(tags.date.getTime()))) {
+      throw new TypeError("tags.date, when provided, must be a valid Date.");
+    }
+    if (tags.lyrics !== void 0 && typeof tags.lyrics !== "string") {
+      throw new TypeError("tags.lyrics, when provided, must be a string.");
+    }
+    if (tags.images !== void 0) {
+      if (!Array.isArray(tags.images)) {
+        throw new TypeError("tags.images, when provided, must be an array.");
+      }
+      for (const image of tags.images) {
+        if (!image || typeof image !== "object") {
+          throw new TypeError("Each image in tags.images must be an object.");
+        }
+        if (!(image.data instanceof Uint8Array)) {
+          throw new TypeError("Each image.data must be a Uint8Array.");
+        }
+        if (typeof image.mimeType !== "string") {
+          throw new TypeError("Each image.mimeType must be a string.");
+        }
+        if (!["coverFront", "coverBack", "unknown"].includes(image.kind)) {
+          throw new TypeError("Each image.kind must be 'coverFront', 'coverBack', or 'unknown'.");
+        }
+      }
+    }
+    if (tags.comment !== void 0 && typeof tags.comment !== "string") {
+      throw new TypeError("tags.comment, when provided, must be a string.");
+    }
+    if (tags.raw !== void 0) {
+      if (!tags.raw || typeof tags.raw !== "object") {
+        throw new TypeError("tags.raw, when provided, must be an object.");
+      }
+      for (const value of Object.values(tags.raw)) {
+        if (value !== null && typeof value !== "string" && !(value instanceof Uint8Array) && !(value instanceof RichImageData) && !(value instanceof AttachedFile) && !isRecordStringString(value)) {
+          throw new TypeError(
+            "Each value in tags.raw must be a string, Uint8Array, RichImageData, AttachedFile, Record<string, string>, or null."
+          );
+        }
+      }
+    }
+  };
+  var metadataTagsAreEmpty = (tags) => {
+    return tags.title === void 0 && tags.description === void 0 && tags.artist === void 0 && tags.album === void 0 && tags.albumArtist === void 0 && tags.trackNumber === void 0 && tags.tracksTotal === void 0 && tags.discNumber === void 0 && tags.discsTotal === void 0 && tags.genre === void 0 && tags.date === void 0 && tags.lyrics === void 0 && (!tags.images || tags.images.length === 0) && tags.comment === void 0 && (tags.raw === void 0 || Object.keys(tags.raw).length === 0);
+  };
+  var DEFAULT_TRACK_DISPOSITION = {
+    default: true,
+    primary: true,
+    forced: false,
+    original: false,
+    commentary: false,
+    hearingImpaired: false,
+    visuallyImpaired: false
+  };
+  var validateTrackDisposition = (disposition) => {
+    if (!disposition || typeof disposition !== "object") {
+      throw new TypeError("disposition must be an object.");
+    }
+    if (disposition.default !== void 0 && typeof disposition.default !== "boolean") {
+      throw new TypeError("disposition.default must be a boolean.");
+    }
+    if (disposition.primary !== void 0 && typeof disposition.primary !== "boolean") {
+      throw new TypeError("disposition.primary must be a boolean.");
+    }
+    if (disposition.forced !== void 0 && typeof disposition.forced !== "boolean") {
+      throw new TypeError("disposition.forced must be a boolean.");
+    }
+    if (disposition.original !== void 0 && typeof disposition.original !== "boolean") {
+      throw new TypeError("disposition.original must be a boolean.");
+    }
+    if (disposition.commentary !== void 0 && typeof disposition.commentary !== "boolean") {
+      throw new TypeError("disposition.commentary must be a boolean.");
+    }
+    if (disposition.hearingImpaired !== void 0 && typeof disposition.hearingImpaired !== "boolean") {
+      throw new TypeError("disposition.hearingImpaired must be a boolean.");
+    }
+    if (disposition.visuallyImpaired !== void 0 && typeof disposition.visuallyImpaired !== "boolean") {
+      throw new TypeError("disposition.visuallyImpaired must be a boolean.");
     }
   };
 
@@ -36763,6 +36763,16 @@ ${cue.notes ?? ""}`;
 
   // src/output.ts
   var ALL_TRACK_TYPES = ["video", "audio", "subtitle"];
+  var isMediaSourceLike = (source, codecs) => {
+    if (!source || typeof source !== "object") {
+      return false;
+    }
+    const value = source;
+    return typeof value._codec === "string" && codecs.includes(value._codec) && "_connectedTrack" in value && typeof value._start === "function" && typeof value._flushAndClose === "function";
+  };
+  var isVideoSource = (source) => source instanceof VideoSource || isMediaSourceLike(source, VIDEO_CODECS);
+  var isAudioSource = (source) => source instanceof AudioSource || isMediaSourceLike(source, AUDIO_CODECS);
+  var isSubtitleSource = (source) => source instanceof SubtitleSource || isMediaSourceLike(source, SUBTITLE_CODECS);
   var OutputTrack2 = class _OutputTrack {
     /** @internal */
     constructor(id, output, type, source, metadata) {
@@ -37059,7 +37069,7 @@ ${cue.notes ?? ""}`;
     }
     /** Adds a video track to the output with the given source. Can only be called before the output is started. */
     addVideoTrack(source, metadata = {}) {
-      if (!(source instanceof VideoSource)) {
+      if (!isVideoSource(source)) {
         throw new TypeError("source must be a VideoSource.");
       }
       validateBaseTrackMetadata(metadata);
@@ -37085,7 +37095,7 @@ ${cue.notes ?? ""}`;
     }
     /** Adds an audio track to the output with the given source. Can only be called before the output is started. */
     addAudioTrack(source, metadata = {}) {
-      if (!(source instanceof AudioSource)) {
+      if (!isAudioSource(source)) {
         throw new TypeError("source must be an AudioSource.");
       }
       validateBaseTrackMetadata(metadata);
@@ -37100,7 +37110,7 @@ ${cue.notes ?? ""}`;
     }
     /** Adds a subtitle track to the output with the given source. Can only be called before the output is started. */
     addSubtitleTrack(source, metadata = {}) {
-      if (!(source instanceof SubtitleSource)) {
+      if (!isSubtitleSource(source)) {
         throw new TypeError("source must be a SubtitleSource.");
       }
       validateBaseTrackMetadata(metadata);
