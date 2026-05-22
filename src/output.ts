@@ -6,11 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-	AUDIO_CODECS,
-	SUBTITLE_CODECS,
-	VIDEO_CODECS,
-} from './codec';
 import { assert, AsyncMutex, EventEmitter, isIso639Dash2LanguageCode, MaybePromise, Rotation, toArray } from './misc';
 import { MetadataTags, TrackDisposition, validateMetadataTags, validateTrackDisposition } from './metadata';
 import { Muxer } from './muxer';
@@ -31,34 +26,6 @@ export const ALL_TRACK_TYPES = ['video', 'audio', 'subtitle'] as const;
  * @public
  */
 export type TrackType = typeof ALL_TRACK_TYPES[number];
-
-const isMediaSourceLike = (source: unknown, codecs: readonly string[]) => {
-	if (!source || typeof source !== 'object') {
-		return false;
-	}
-
-	const value = source as Partial<MediaSource> & {
-		_codec?: unknown;
-		_connectedTrack?: unknown;
-	};
-
-	return (
-		typeof value._codec === 'string'
-		&& codecs.includes(value._codec)
-		&& '_connectedTrack' in value
-		&& typeof value._start === 'function'
-		&& typeof value._flushAndClose === 'function'
-	);
-};
-
-const isVideoSource = (source: unknown): source is VideoSource =>
-	source instanceof VideoSource || isMediaSourceLike(source, VIDEO_CODECS);
-
-const isAudioSource = (source: unknown): source is AudioSource =>
-	source instanceof AudioSource || isMediaSourceLike(source, AUDIO_CODECS);
-
-const isSubtitleSource = (source: unknown): source is SubtitleSource =>
-	source instanceof SubtitleSource || isMediaSourceLike(source, SUBTITLE_CODECS);
 
 /**
  * Represents a track added to an {@link Output}.
@@ -628,7 +595,7 @@ export class Output<
 
 	/** Adds a video track to the output with the given source. Can only be called before the output is started. */
 	addVideoTrack(source: VideoSource, metadata: VideoTrackMetadata = {}) {
-		if (!isVideoSource(source)) {
+		if (!(source instanceof VideoSource)) {
 			throw new TypeError('source must be a VideoSource.');
 		}
 		validateBaseTrackMetadata(metadata);
@@ -657,7 +624,7 @@ export class Output<
 
 	/** Adds an audio track to the output with the given source. Can only be called before the output is started. */
 	addAudioTrack(source: AudioSource, metadata: AudioTrackMetadata = {}) {
-		if (!isAudioSource(source)) {
+		if (!(source instanceof AudioSource)) {
 			throw new TypeError('source must be an AudioSource.');
 		}
 		validateBaseTrackMetadata(metadata);
@@ -672,7 +639,7 @@ export class Output<
 
 	/** Adds a subtitle track to the output with the given source. Can only be called before the output is started. */
 	addSubtitleTrack(source: SubtitleSource, metadata: SubtitleTrackMetadata = {}) {
-		if (!isSubtitleSource(source)) {
+		if (!(source instanceof SubtitleSource)) {
 			throw new TypeError('source must be a SubtitleSource.');
 		}
 		validateBaseTrackMetadata(metadata);
