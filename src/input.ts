@@ -77,6 +77,10 @@ export type InputOptions<S extends Source = Source> = {
 
 	/** Can be used to specify additional per-format configuration. */
 	formatOptions?: InputFormatOptions;
+	/** The maximum number of child sources cached per cache group. Defaults to 4. */
+	sourceCacheSize?: number;
+	/** The maximum number of HLS/DASH segment inputs cached. Defaults to 4. */
+	segmentInputCacheSize?: number;
 };
 
 type SourceCacheEntry = {
@@ -150,6 +154,10 @@ export class Input<S extends Source = Source> extends EventEmitter<InputEvents> 
 	/** @internal */
 	_formatOptions: InputFormatOptions;
 	/** @internal */
+	_sourceCacheSize: number;
+	/** @internal */
+	_segmentInputCacheSize: number;
+	/** @internal */
 	_onFormatDetermined: ((format: InputFormat) => void) | null = null;
 
 	/** True if the input has been disposed. */
@@ -182,10 +190,24 @@ export class Input<S extends Source = Source> extends EventEmitter<InputEvents> 
 		if (options.formatOptions !== undefined) {
 			validateInputFormatOptions(options.formatOptions, 'formatOptions');
 		}
+		if (
+			options.sourceCacheSize !== undefined
+			&& (!Number.isInteger(options.sourceCacheSize) || options.sourceCacheSize < 1)
+		) {
+			throw new TypeError('options.sourceCacheSize, when provided, must be a positive integer.');
+		}
+		if (
+			options.segmentInputCacheSize !== undefined
+			&& (!Number.isInteger(options.segmentInputCacheSize) || options.segmentInputCacheSize < 1)
+		) {
+			throw new TypeError('options.segmentInputCacheSize, when provided, must be a positive integer.');
+		}
 
 		this._formats = options.formats;
 		this._initInput = options.initInput ?? null;
 		this._formatOptions = options.formatOptions ?? {};
+		this._sourceCacheSize = options.sourceCacheSize ?? 4;
+		this._segmentInputCacheSize = options.segmentInputCacheSize ?? 4;
 
 		if (options.source instanceof Source) {
 			this._rootRef = options.source.ref();
@@ -232,13 +254,12 @@ export class Input<S extends Source = Source> extends EventEmitter<InputEvents> 
 		const promise = (async () => {
 			const sourceRef = await this._getSourceUncached(request);
 
-			const MAX_SOURCE_CACHE_SIZE = 4;
 			const count = arrayCount(
 				this._sourceCache,
 				x => x.cacheGroup === cacheGroup && x.sourceRef.source._refCount === 1,
 			);
 
-			if (count >= MAX_SOURCE_CACHE_SIZE) {
+			if (count >= this._sourceCacheSize) {
 				const minAgeIndex = arrayArgmin(
 					this._sourceCache,
 					x => x.cacheGroup === cacheGroup && x.sourceRef.source._refCount === 1 ? x.age : Infinity,

@@ -82,9 +82,19 @@ export class Input extends EventEmitter {
         if (options.formatOptions !== undefined) {
             validateInputFormatOptions(options.formatOptions, 'formatOptions');
         }
+        if (options.sourceCacheSize !== undefined
+            && (!Number.isInteger(options.sourceCacheSize) || options.sourceCacheSize < 1)) {
+            throw new TypeError('options.sourceCacheSize, when provided, must be a positive integer.');
+        }
+        if (options.segmentInputCacheSize !== undefined
+            && (!Number.isInteger(options.segmentInputCacheSize) || options.segmentInputCacheSize < 1)) {
+            throw new TypeError('options.segmentInputCacheSize, when provided, must be a positive integer.');
+        }
         this._formats = options.formats;
         this._initInput = options.initInput ?? null;
         this._formatOptions = options.formatOptions ?? {};
+        this._sourceCacheSize = options.sourceCacheSize ?? 4;
+        this._segmentInputCacheSize = options.segmentInputCacheSize ?? 4;
         if (options.source instanceof Source) {
             this._rootRef = options.source.ref();
         }
@@ -118,9 +128,8 @@ export class Input extends EventEmitter {
         }
         const promise = (async () => {
             const sourceRef = await this._getSourceUncached(request);
-            const MAX_SOURCE_CACHE_SIZE = 4;
             const count = arrayCount(this._sourceCache, x => x.cacheGroup === cacheGroup && x.sourceRef.source._refCount === 1);
-            if (count >= MAX_SOURCE_CACHE_SIZE) {
+            if (count >= this._sourceCacheSize) {
                 const minAgeIndex = arrayArgmin(this._sourceCache, x => x.cacheGroup === cacheGroup && x.sourceRef.source._refCount === 1 ? x.age : Infinity);
                 assert(minAgeIndex !== -1);
                 const entry = this._sourceCache[minAgeIndex];

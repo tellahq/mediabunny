@@ -260,8 +260,7 @@ export class DashSegmentedInput extends SegmentedInput {
 			age: this.nextInputCacheAge++,
 		});
 
-		const MAX_INPUT_CACHE_SIZE = 4;
-		if (this.inputCache.length > MAX_INPUT_CACHE_SIZE) {
+		if (this.inputCache.length > this.input._segmentInputCacheSize) {
 			const minAgeIndex = arrayArgmin(this.inputCache, x => x.age);
 			assert(minAgeIndex !== -1);
 			this.inputCache.splice(minAgeIndex, 1);

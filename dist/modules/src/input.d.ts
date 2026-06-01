@@ -33,6 +33,10 @@ export type InputOptions<S extends Source = Source> = {
     initInput?: Input;
     /** Can be used to specify additional per-format configuration. */
     formatOptions?: InputFormatOptions;
+    /** The maximum number of child sources cached per cache group. Defaults to 4. */
+    sourceCacheSize?: number;
+    /** The maximum number of HLS/DASH segment inputs cached. Defaults to 4. */
+    segmentInputCacheSize?: number;
 };
 /**
  * Describes the events that an {@link Input} emits, with each key being an event name and its value being the
